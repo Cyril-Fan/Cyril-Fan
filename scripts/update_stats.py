@@ -67,8 +67,9 @@ ICONS = [
 
 
 def make_svg(login, stats, updated, dark=False):
-    bg, border, text, muted = ("#0d1117", "#30363d", "#f0f6fc", "#9198a1") if dark else ("#ffffff", "#d1d9e0", "#1f2328", "#59636e")
-    blue, green = ("#58a6ff", "#3fb950") if dark else ("#0969da", "#1a7f37")
+    # Transparent backgrounds follow the host page, including Soft dark.
+    bg, border, text, muted = ("none", "#3d444d", "#f0f6fc", "#9198a1") if dark else ("none", "#d1d9e0", "#1f2328", "#59636e")
+    blue, green = ("#4493f8", "#3fb950") if dark else ("#0969da", "#1a7f37")
     summary = "; ".join(f"{label}: {value}" for label, value, _ in stats)
     parts = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="840" height="166" viewBox="0 0 840 166" role="img" aria-labelledby="title desc">',
