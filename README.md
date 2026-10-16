@@ -26,17 +26,17 @@ Exploring cross-modal prompt learning for generalizable remote sensing scene cla
 ## 📊 GitHub Stats
 
 <a href="https://github.com/Cyril-Fan#gh-light-mode-only">
-  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-stats.svg" alt="Cyril Fan's public GitHub statistics in light mode" width="100%" />
+  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-stats.svg?palette=github-default-20261016" alt="Cyril Fan's public GitHub statistics in light mode" width="100%" />
 </a>
 <a href="https://github.com/Cyril-Fan#gh-dark-mode-only">
-  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-stats-dark.svg" alt="Cyril Fan's public GitHub statistics in dark mode" width="100%" />
+  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-stats-dark.svg?palette=github-default-20261016" alt="Cyril Fan's public GitHub statistics in dark mode" width="100%" />
 </a>
 
 <a href="https://github.com/Cyril-Fan#gh-light-mode-only">
-  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-contribution-grid-snake.svg" alt="Contribution snake using GitHub's Light default contribution colors" width="100%" />
+  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-contribution-grid-snake.svg?palette=github-default-20261016" alt="Contribution snake using GitHub's Light default contribution colors" width="100%" />
 </a>
 <a href="https://github.com/Cyril-Fan#gh-dark-mode-only">
-  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-contribution-grid-snake-dark.svg" alt="Contribution snake using GitHub's Dark default contribution colors" width="100%" />
+  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-contribution-grid-snake-dark.svg?palette=github-default-20261016" alt="Contribution snake using GitHub's Dark default contribution colors" width="100%" />
 </a>
 
 ---
