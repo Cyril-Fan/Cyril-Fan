@@ -40,10 +40,26 @@ jobs:
         with:
           github_user_name: ${{ github.repository_owner }}
           outputs: |
-            assets/github-contribution-grid-snake.svg?color_snake=%230969da
-            assets/github-contribution-grid-snake-dark.svg?palette=github-dark&color_snake=%2358a6ff
+            assets/github-contribution-grid-snake.svg?color_snake=%230969da&color_dots=%23eff2f5,%23aceebb,%234ac26b,%232da44e,%23116329
+            assets/github-contribution-grid-snake-dark.svg?palette=github-dark&color_snake=%234493f8&color_dots=%23151b23,%23033a16,%23196c2e,%232ea043,%2356d364
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Match GitHub default contribution borders
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          for name, border in [
+              ('github-contribution-grid-snake.svg', '#1f23280d'),
+              ('github-contribution-grid-snake-dark.svg', '#0104090d'),
+          ]:
+              path = Path('assets') / name
+              source, count = re.subn(r'--cb:[^;}]+', '--cb:' + border, path.read_text(encoding='utf-8'))
+              if count != 1:
+                  raise RuntimeError(f'Expected one contribution border variable in {name}; found {count}')
+              path.write_text(source, encoding='utf-8')
+          PY
 
       - name: Save generated assets
         run: |
