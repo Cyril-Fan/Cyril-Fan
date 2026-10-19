@@ -9,20 +9,6 @@
 
 ---
 
-## 🚀 Featured Project
-
-### [SPCP · Semantics-Preserving Cross-Modal Prompting](https://github.com/Cyril-Fan/SPCP)
-
-Exploring cross-modal prompt learning for generalizable remote sensing scene classification with frozen CLIP.
-
-<p>
-  <a href="https://github.com/Cyril-Fan/SPCP"><img src="https://img.shields.io/badge/SPCP-View%20Project-0969da?style=for-the-badge&logo=github&logoColor=white" alt="View the SPCP project" /></a>
-  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch" />
-</p>
-
----
-
 ## 📊 GitHub Stats
 
 <a href="https://github.com/Cyril-Fan#gh-light-mode-only">
