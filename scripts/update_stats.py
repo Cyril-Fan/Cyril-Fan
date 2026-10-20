@@ -2,7 +2,10 @@
 
 import json
 import os
-from datetime import datetime, timezone
+import re
+import sys
+from hashlib import sha256
+from datetime import date, datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -13,7 +16,10 @@ query Profile($login: String!, $after: String) {
   user(login: $login) {
     followers { totalCount }
     contributionsCollection {
-      contributionCalendar { totalContributions }
+      contributionCalendar {
+        totalContributions
+        weeks { contributionDays { date contributionCount } }
+      }
     }
     repositories(first: 100, after: $after, privacy: PUBLIC, ownerAffiliations: [OWNER]) {
       totalCount
@@ -25,9 +31,20 @@ query Profile($login: String!, $after: String) {
 """
 
 
-def fetch_stats(login, token):
+def count(value):
+    if type(value) is not int or not 0 <= value <= 9_007_199_254_740_991:
+        raise ValueError('GitHub returned an invalid public count')
+    return value
+
+
+def fetch_snapshot(login, token):
+    if not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?', login):
+        raise ValueError('Invalid GitHub login')
     after = None
     stars = 0
+    seen = set()
+    repository_count = 0
+    first_user = None
     while True:
         payload = json.dumps({"query": QUERY, "variables": {"login": login, "after": after}}).encode()
         request = Request(
@@ -37,6 +54,7 @@ def fetch_stats(login, token):
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
                 "User-Agent": "github-profile-stats",
+                "Cache-Control": "no-cache",
             },
         )
         with urlopen(request, timeout=30) as response:
@@ -47,15 +65,41 @@ def fetch_stats(login, token):
         if user is None:
             raise RuntimeError(f"GitHub user {login!r} was not found")
         repos = user["repositories"]
-        stars += sum(repo["stargazerCount"] for repo in repos["nodes"])
+        first_user = first_user or user
+        repository_count += len(repos["nodes"])
+        stars += sum(count(repo["stargazerCount"]) for repo in repos["nodes"])
         if not repos["pageInfo"]["hasNextPage"]:
-            return [
-                ("Repositories", repos["totalCount"], "Public repositories"),
-                ("Stars", stars, "Across public repositories"),
-                ("Followers", user["followers"]["totalCount"], "GitHub community"),
-                ("Contributions", user["contributionsCollection"]["contributionCalendar"]["totalContributions"], "In the past year"),
-            ]
+            break
         after = repos["pageInfo"]["endCursor"]
+        if not isinstance(after, str) or not after or after in seen:
+            raise ValueError('Invalid repository pagination')
+        seen.add(after)
+    total_repositories = count(first_user['repositories']['totalCount'])
+    if repository_count != total_repositories:
+        raise ValueError('Repository list changed or was incomplete; retry the refresh')
+    calendar = first_user['contributionsCollection']['contributionCalendar']
+    days = [
+        {'date': day['date'], 'count': count(day['contributionCount'])}
+        for week in calendar['weeks'] for day in week['contributionDays']
+    ]
+    if not 350 <= len(days) <= 400:
+        raise ValueError('Incomplete contribution calendar')
+    start = date.fromisoformat(days[0]['date'])
+    if any(day['date'] != (start + timedelta(days=i)).isoformat() for i, day in enumerate(days)):
+        raise ValueError('Contribution dates must be valid, unique and consecutive')
+    contributions = count(calendar['totalContributions'])
+    if sum(day['count'] for day in days) != contributions:
+        raise ValueError('Contribution total does not match daily activity')
+    return {
+        'login': login,
+        'stats': [
+            ['Repositories', total_repositories, 'Public repositories'],
+            ['Stars', count(stars), 'Across public repositories'],
+            ['Followers', count(first_user['followers']['totalCount']), 'GitHub community'],
+            ['Contributions', contributions, 'In the past year'],
+        ],
+        'calendar': days,
+    }
 
 
 ICONS = [
@@ -96,15 +140,79 @@ def make_svg(login, stats, updated, dark=False):
     return "\n".join(parts)
 
 
-def main():
-    login = os.environ.get("PROFILE_USER") or os.environ["GITHUB_REPOSITORY_OWNER"]
-    stats = fetch_stats(login, os.environ["GITHUB_TOKEN"])
-    updated = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    assets = Path(__file__).resolve().parents[1] / "assets"
+def refresh(root, login, token, force=False):
+    # Finish fetching and validating before touching the last known good assets.
+    snapshot = fetch_snapshot(login, token)
+    assets = root / 'assets'
     assets.mkdir(exist_ok=True)
-    for dark, filename in [(False, "github-stats.svg"), (True, "github-stats-dark.svg")]:
-        (assets / filename).write_text(make_svg(login, stats, updated, dark), encoding="utf-8")
-    print(f"Updated public statistics for {login}: " + ", ".join(f"{label}={value}" for label, value, _ in stats))
+    state_file = assets / 'profile-data.json'
+    try:
+        previous = json.loads(state_file.read_text(encoding='utf-8'))
+    except (FileNotFoundError, ValueError):
+        previous = {}
+    if not isinstance(previous, dict) or not isinstance(previous.get('updated'), str):
+        previous = {}
+    changed = force or any(previous.get(key) != value for key, value in snapshot.items())
+    snake_changed = force or previous.get('calendar') != snapshot['calendar'] or any(
+        not (assets / filename).is_file() for filename in SNAKES
+    )
+    updated = previous.get('updated', '')
+    if changed or any(not (assets / filename).is_file() for filename in CARDS):
+        updated = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')
+        for dark, filename in [(False, 'github-stats.svg'), (True, 'github-stats-dark.svg')]:
+            (assets / filename).write_text(make_svg(login, snapshot['stats'], updated, dark), encoding='utf-8')
+        state_file.write_text(json.dumps({**snapshot, 'updated': updated}, indent=2) + '\n', encoding='utf-8')
+    print(f"Checked public statistics for {login}: " + ", ".join(f"{label}={value}" for label, value, _ in snapshot['stats']))
+    return snake_changed
+
+
+CARDS = ['github-stats.svg', 'github-stats-dark.svg']
+SNAKES = ['github-contribution-grid-snake.svg', 'github-contribution-grid-snake-dark.svg']
+STATUS_START = '<!-- profile-sync:status:start -->'
+STATUS_END = '<!-- profile-sync:status:end -->'
+
+
+def publish_assets(root):
+    """Change all image cache keys together, only after every generator succeeds."""
+    assets = root / 'assets'
+    state = json.loads((assets / 'profile-data.json').read_text(encoding='utf-8'))
+    readme_file = root / 'README.md'
+    readme = readme_file.read_text(encoding='utf-8')
+    base = f"https://raw.githubusercontent.com/{state['login']}/{state['login']}/main/assets/"
+    for filename in CARDS + SNAKES:
+        version = sha256((assets / filename).read_bytes()).hexdigest()[:20]
+        pattern = re.escape(base + filename) + r'(?:\?[^"\s<>]*)?'
+        readme, replacements = re.subn(pattern, lambda _: base + filename + '?v=' + version, readme)
+        if replacements != 1:
+            raise ValueError(f'Expected one README image for {filename}; found {replacements}')
+    status = (
+        STATUS_START + '\n'
+        f"<sub>Public-data snapshot · Updated {escape(state['updated'])} UTC · "
+        f"[Automatic checks every 5 minutes](https://github.com/{state['login']}/{state['login']}/actions/workflows/profile.yml). "
+        'GitHub scheduling and caching can delay updates; this is not a live counter.</sub>\n'
+        + STATUS_END
+    )
+    if STATUS_START in readme or STATUS_END in readme:
+        if readme.count(STATUS_START) != 1 or readme.count(STATUS_END) != 1:
+            raise ValueError('Invalid profile status markers')
+        readme = re.sub(re.escape(STATUS_START) + r'.*?' + re.escape(STATUS_END), lambda _: status, readme, flags=re.S)
+    else:
+        readme = readme.replace('## 📊 GitHub Stats', '## 📊 GitHub Stats\n\n' + status, 1)
+    readme_file.write_text(readme, encoding='utf-8')
+
+
+def main():
+    root = Path(__file__).resolve().parents[1]
+    if sys.argv[1:] == ['--publish']:
+        publish_assets(root)
+        return
+    if sys.argv[1:]:
+        raise ValueError('Supported option: --publish')
+    login = os.environ.get('PROFILE_USER') or os.environ['GITHUB_REPOSITORY_OWNER']
+    snake_changed = refresh(root, login, os.environ['GITHUB_TOKEN'], os.environ.get('FORCE_PROFILE_REFRESH') == 'true')
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            output.write(f'snake_changed={str(snake_changed).lower()}\n')
 
 
 if __name__ == "__main__":
