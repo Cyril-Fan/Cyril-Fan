@@ -1,4 +1,3 @@
-import copy
 import io
 import json
 import sys
@@ -30,8 +29,20 @@ def response(followers=2):
     }}}
 
 
-def replies(*values):
-    return patch.object(stats, 'urlopen', side_effect=[io.BytesIO(json.dumps(value).encode()) for value in values])
+def public_repositories(stars):
+    return [
+        {'id': index + 1, 'owner': {'login': 'Cyril-Fan'}, 'private': False, 'stargazers_count': value}
+        for index, value in enumerate(stars)
+    ]
+
+
+def replies(value, repositories=None):
+    if repositories is None:
+        nodes = value.get('data', {}).get('user', {}).get('repositories', {}).get('nodes', [])
+        repositories = public_repositories([node['stargazerCount'] for node in nodes])
+    return patch.object(stats, 'urlopen', side_effect=[
+        io.BytesIO(json.dumps(payload).encode()) for payload in [value, repositories]
+    ])
 
 
 class ProfileRefreshTests(unittest.TestCase):
@@ -129,26 +140,60 @@ class ProfileRefreshTests(unittest.TestCase):
         days = duplicate['data']['user']['contributionsCollection']['contributionCalendar']['weeks'][0]['contributionDays']
         days[10]['date'] = days[9]['date']
         invalid.append(duplicate)
-        partial = response()
-        partial['data']['user']['repositories']['nodes'].pop()
-        invalid.append(partial)
         for payload in invalid:
             with self.subTest(payload=payload['data']['user']['followers']), self.assertRaises(ValueError):
                 self.refresh(payload)
         self.assertEqual(self.files(), before)
 
-    def test_star_pagination_covers_all_public_repositories_and_rejects_loops(self):
-        first = response()
-        first['data']['user']['repositories'].update({
-            'nodes': [{'stargazerCount': 4}],
-            'pageInfo': {'hasNextPage': True, 'endCursor': 'page-two'},
-        })
-        second = response()
-        second['data']['user']['repositories']['nodes'] = [{'stargazerCount': 5}]
-        with replies(first, second):
-            self.assertEqual(stats.fetch_snapshot('Cyril-Fan', 'test-token')['stats'][1][1], 9)
-        with replies(first, copy.deepcopy(first)), self.assertRaises(ValueError):
-            stats.fetch_snapshot('Cyril-Fan', 'test-token')
+    def test_new_public_repository_updates_both_cards_despite_graphql_subset(self):
+        self.refresh(response())
+        stats.publish_assets(self.root)
+        before = (self.root / 'README.md').read_text(encoding='utf-8')
+        # Reproduce the failure: an installation-scoped GraphQL response still
+        # describes two repositories while the public owner list contains three.
+        with replies(response(), public_repositories([1, 0, 2])) as network:
+            self.assertFalse(stats.refresh(self.root, 'Cyril-Fan', 'test-token'))
+        stats.publish_assets(self.root)
+        for name in stats.CARDS:
+            svg = (self.root / 'assets' / name).read_text(encoding='utf-8')
+            self.assertIn('Repositories: 3; Stars: 3;', svg)
+        self.assertNotEqual(before, (self.root / 'README.md').read_text(encoding='utf-8'))
+        public_request = network.call_args_list[1].args[0]
+        self.assertIsNone(public_request.get_header('Authorization'))
+        self.assertIn('type=owner', public_request.full_url)
+        self.assertNotIn('repositories(', stats.QUERY)
+
+    def test_public_repository_pagination_covers_all_pages_and_rejects_duplicates(self):
+        first = public_repositories([1] * 100)
+        last = public_repositories([9])
+        last[0]['id'] = 101
+        with patch.object(stats, 'urlopen', side_effect=[
+            io.BytesIO(json.dumps(payload).encode()) for payload in [first, last]
+        ]) as network:
+            self.assertEqual(stats.fetch_public_repository_totals('Cyril-Fan'), (101, 109))
+        self.assertIn('page=2', network.call_args_list[1].args[0].full_url)
+        with patch.object(stats, 'urlopen', side_effect=[
+            io.BytesIO(json.dumps(first).encode()), io.BytesIO(json.dumps(first).encode())
+        ]), self.assertRaises(ValueError):
+            stats.fetch_public_repository_totals('Cyril-Fan')
+
+    def test_invalid_or_failed_public_repository_fetch_preserves_snapshot(self):
+        self.refresh(response())
+        before = self.files()
+        invalid = [{'message': 'API rate limit exceeded'}, [None]]
+        for key, value in [('private', True), ('owner', {'login': 'another-user'}),
+                           ('stargazers_count', -1), ('id', None)]:
+            repository = public_repositories([0])[0]
+            repository[key] = value
+            invalid.append([repository])
+        for repositories in invalid:
+            with self.subTest(repositories=repositories), replies(response(), repositories), self.assertRaises(ValueError):
+                stats.refresh(self.root, 'Cyril-Fan', 'test-token')
+        with patch.object(stats, 'urlopen', side_effect=[
+            io.BytesIO(json.dumps(response()).encode()), TimeoutError
+        ]), self.assertRaises(TimeoutError):
+            stats.refresh(self.root, 'Cyril-Fan', 'test-token')
+        self.assertEqual(self.files(), before)
 
     def test_missing_asset_never_replaces_the_readme_with_a_broken_url(self):
         self.refresh(response())
