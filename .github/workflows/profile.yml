@@ -6,13 +6,10 @@ on:
     # Scheduled jobs can still be delayed or dropped by GitHub.
     - cron: '2-57/5 * * * *'
   workflow_dispatch:
+  watch:
+    types: [started]
   push:
     branches: [main]
-    paths:
-      - README.md
-      - scripts/**
-      - tests/**
-      - .github/workflows/profile.yml
 
 permissions:
   contents: read
@@ -40,7 +37,21 @@ jobs:
         env:
           PROFILE_USER: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORCE_PROFILE_REFRESH: ${{ github.event_name != 'schedule' }}
+          FORCE_PROFILE_REFRESH: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
+
+      - name: Publish statistics without waiting for snake generation
+        run: python3 scripts/update_stats.py --publish-cards
+
+      - name: Save refreshed statistics immediately
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add assets/github-stats.svg assets/github-stats-dark.svg assets/profile-data.json README.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: refresh public profile statistics'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
 
       - name: Generate contribution snake animations
         if: steps.stats.outputs.snake_changed == 'true'
@@ -71,9 +82,11 @@ jobs:
           PY
 
       - name: Version README image URLs after all assets are ready
+        if: steps.stats.outputs.snake_changed == 'true'
         run: python3 scripts/update_stats.py --publish
 
       - name: Save changed assets and their README cache keys together
+        if: steps.stats.outputs.snake_changed == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
