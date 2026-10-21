@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 
 
 QUERY = """
-query Profile($login: String!, $after: String) {
+query Profile($login: String!) {
   user(login: $login) {
     followers { totalCount }
     contributionsCollection {
@@ -20,11 +20,6 @@ query Profile($login: String!, $after: String) {
         totalContributions
         weeks { contributionDays { date contributionCount } }
       }
-    }
-    repositories(first: 100, after: $after, privacy: PUBLIC, ownerAffiliations: [OWNER]) {
-      totalCount
-      nodes { stargazerCount }
-      pageInfo { hasNextPage endCursor }
     }
   }
 }
@@ -37,47 +32,70 @@ def count(value):
     return value
 
 
+def fetch_public_repository_totals(login):
+    """Count the public owner's list, independently of the workflow token's scope."""
+    seen = set()
+    stars = 0
+    page = 1
+    while True:
+        request = Request(
+            f'https://api.github.com/users/{login}/repos?type=owner&sort=full_name&per_page=100&page={page}',
+            headers={
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+                'User-Agent': 'github-profile-stats',
+                'Cache-Control': 'no-cache',
+            },
+        )
+        # Deliberately unauthenticated: this card describes the public profile,
+        # not the repository subset visible through an installation token.
+        with urlopen(request, timeout=30) as response:
+            repositories = json.load(response)
+        if not isinstance(repositories, list) or len(repositories) > 100:
+            raise ValueError('GitHub returned an invalid public repository list')
+        for repository in repositories:
+            if not isinstance(repository, dict):
+                raise ValueError('Invalid public repository entry')
+            repository_id = count(repository.get('id'))
+            owner = repository.get('owner')
+            if (
+                not isinstance(owner, dict)
+                or not isinstance(owner.get('login'), str)
+                or owner['login'].lower() != login.lower()
+                or repository.get('private') is not False
+                or repository_id in seen
+            ):
+                raise ValueError('Incomplete, duplicate or non-public owner repository list')
+            seen.add(repository_id)
+            stars += count(repository.get('stargazers_count'))
+        if len(repositories) < 100:
+            return len(seen), count(stars)
+        page += 1
+
+
 def fetch_snapshot(login, token):
     if not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?', login):
         raise ValueError('Invalid GitHub login')
-    after = None
-    stars = 0
-    seen = set()
-    repository_count = 0
-    first_user = None
-    while True:
-        payload = json.dumps({"query": QUERY, "variables": {"login": login, "after": after}}).encode()
-        request = Request(
-            "https://api.github.com/graphql",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "User-Agent": "github-profile-stats",
-                "Cache-Control": "no-cache",
-            },
-        )
-        with urlopen(request, timeout=30) as response:
-            result = json.load(response)
-        if result.get("errors"):
-            raise RuntimeError("GitHub GraphQL returned errors: " + json.dumps(result["errors"]))
-        user = result["data"]["user"]
-        if user is None:
-            raise RuntimeError(f"GitHub user {login!r} was not found")
-        repos = user["repositories"]
-        first_user = first_user or user
-        repository_count += len(repos["nodes"])
-        stars += sum(count(repo["stargazerCount"]) for repo in repos["nodes"])
-        if not repos["pageInfo"]["hasNextPage"]:
-            break
-        after = repos["pageInfo"]["endCursor"]
-        if not isinstance(after, str) or not after or after in seen:
-            raise ValueError('Invalid repository pagination')
-        seen.add(after)
-    total_repositories = count(first_user['repositories']['totalCount'])
-    if repository_count != total_repositories:
-        raise ValueError('Repository list changed or was incomplete; retry the refresh')
-    calendar = first_user['contributionsCollection']['contributionCalendar']
+    payload = json.dumps({"query": QUERY, "variables": {"login": login}}).encode()
+    request = Request(
+        "https://api.github.com/graphql",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "github-profile-stats",
+            "Cache-Control": "no-cache",
+        },
+    )
+    with urlopen(request, timeout=30) as response:
+        result = json.load(response)
+    if result.get("errors"):
+        raise RuntimeError("GitHub GraphQL returned errors: " + json.dumps(result["errors"]))
+    user = result["data"]["user"]
+    if user is None:
+        raise RuntimeError(f"GitHub user {login!r} was not found")
+    total_repositories, stars = fetch_public_repository_totals(login)
+    calendar = user['contributionsCollection']['contributionCalendar']
     days = [
         {'date': day['date'], 'count': count(day['contributionCount'])}
         for week in calendar['weeks'] for day in week['contributionDays']
@@ -95,7 +113,7 @@ def fetch_snapshot(login, token):
         'stats': [
             ['Repositories', total_repositories, 'Public repositories'],
             ['Stars', count(stars), 'Across public repositories'],
-            ['Followers', count(first_user['followers']['totalCount']), 'GitHub community'],
+            ['Followers', count(user['followers']['totalCount']), 'GitHub community'],
             ['Contributions', contributions, 'In the past year'],
         ],
         'calendar': days,
@@ -188,7 +206,7 @@ def publish_assets(root):
     status = (
         STATUS_START + '\n'
         f"<sub>Public-data snapshot · Updated {escape(state['updated'])} UTC · "
-        f"[Automatic checks every 5 minutes](https://github.com/{state['login']}/{state['login']}/actions/workflows/profile.yml). "
+        f"[Scheduled checks every 5 minutes](https://github.com/{state['login']}/{state['login']}/actions/workflows/profile.yml). "
         'GitHub scheduling and caching can delay updates; this is not a live counter.</sub>\n'
         + STATUS_END
     )
