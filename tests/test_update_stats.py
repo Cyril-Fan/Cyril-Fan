@@ -13,10 +13,11 @@ import update_stats as stats
 
 def response(followers=2):
     days = [
-        {'date': (date(2025, 10, 20) + timedelta(days=i)).isoformat(), 'contributionCount': 0}
+        {'date': (date(2025, 10, 20) + timedelta(days=i)).isoformat(), 'contributionCount': 0, 'contributionLevel': 'NONE'}
         for i in range(365)
     ]
     days[-1]['contributionCount'] = 6
+    days[-1]['contributionLevel'] = 'FOURTH_QUARTILE'
     return {'data': {'user': {
         'followers': {'totalCount': followers},
         'contributionsCollection': {'contributionCalendar': {
@@ -112,6 +113,46 @@ class ProfileRefreshTests(unittest.TestCase):
         (self.root / 'assets' / stats.SNAKES[0]).write_text('<svg>new animation</svg>', encoding='utf-8')
         stats.publish_assets(self.root)
         self.assertNotEqual(before, (self.root / 'README.md').read_text(encoding='utf-8'))
+
+    def test_color_level_change_alone_regenerates_the_snake(self):
+        self.refresh(response())
+        stats.publish_assets(self.root)
+        updated = response()
+        updated['data']['user']['contributionsCollection']['contributionCalendar']['weeks'][0]['contributionDays'][-1]['contributionLevel'] = 'THIRD_QUARTILE'
+        self.assertTrue(self.refresh(updated))
+        state = json.loads((self.root / 'assets/profile-data.json').read_text(encoding='utf-8'))
+        self.assertEqual(state['calendar'][-1]['level'], 3)
+        self.assertNotEqual(state['snake_calendar_hash'], stats.calendar_hash(state['calendar']))
+
+    def test_cards_publish_before_snake_and_failed_snakes_remain_pending(self):
+        self.refresh(response())
+        stats.publish_assets(self.root)
+        old_readme = (self.root / 'README.md').read_text(encoding='utf-8')
+        updated = response(3)
+        calendar = updated['data']['user']['contributionsCollection']['contributionCalendar']
+        calendar['totalContributions'] += 1
+        calendar['weeks'][0]['contributionDays'][-1]['contributionCount'] += 1
+        self.assertTrue(self.refresh(updated))
+        stats.publish_assets(self.root, include_snakes=False)
+        new_readme = (self.root / 'README.md').read_text(encoding='utf-8')
+        for name in stats.SNAKES:
+            old_url = next(line for line in old_readme.splitlines() if name + '?' in line)
+            self.assertIn(old_url, new_readme)
+        for name in stats.CARDS:
+            self.assertIn('Followers: 3;', (self.root / 'assets' / name).read_text(encoding='utf-8'))
+        self.assertTrue(self.refresh(updated), 'A failed or pending snake must be retried')
+        stats.publish_assets(self.root)
+        self.assertFalse(self.refresh(updated))
+
+    def test_unknown_contribution_levels_cannot_replace_a_good_snapshot(self):
+        self.refresh(response())
+        before = self.files()
+        for level in [None, 'UNKNOWN', True]:
+            updated = response()
+            updated['data']['user']['contributionsCollection']['contributionCalendar']['weeks'][0]['contributionDays'][-1]['contributionLevel'] = level
+            with self.subTest(level=level), self.assertRaises(ValueError):
+                self.refresh(updated)
+        self.assertEqual(self.files(), before)
 
     def test_force_refresh_and_missing_animation_are_not_skipped(self):
         self.refresh(response())
