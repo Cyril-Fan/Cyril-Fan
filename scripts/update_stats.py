@@ -18,7 +18,7 @@ query Profile($login: String!) {
     contributionsCollection {
       contributionCalendar {
         totalContributions
-        weeks { contributionDays { date contributionCount } }
+        weeks { contributionDays { date contributionCount contributionLevel } }
       }
     }
   }
@@ -30,6 +30,29 @@ def count(value):
     if type(value) is not int or not 0 <= value <= 9_007_199_254_740_991:
         raise ValueError('GitHub returned an invalid public count')
     return value
+
+
+CONTRIBUTION_LEVELS = {
+    'NONE': 0,
+    'FIRST_QUARTILE': 1,
+    'SECOND_QUARTILE': 2,
+    'THIRD_QUARTILE': 3,
+    'FOURTH_QUARTILE': 4,
+}
+
+
+def contribution_day(day):
+    level = day.get('contributionLevel')
+    if level not in CONTRIBUTION_LEVELS:
+        raise ValueError('GitHub returned an invalid contribution color level')
+    value = count(day['contributionCount'])
+    if (value == 0) != (level == 'NONE'):
+        raise ValueError('Contribution count and color level disagree')
+    return {'date': day['date'], 'count': value, 'level': CONTRIBUTION_LEVELS[level]}
+
+
+def calendar_hash(calendar):
+    return sha256(json.dumps(calendar, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 def fetch_public_repository_totals(login):
@@ -97,7 +120,7 @@ def fetch_snapshot(login, token):
     total_repositories, stars = fetch_public_repository_totals(login)
     calendar = user['contributionsCollection']['contributionCalendar']
     days = [
-        {'date': day['date'], 'count': count(day['contributionCount'])}
+        contribution_day(day)
         for week in calendar['weeks'] for day in week['contributionDays']
     ]
     if not 350 <= len(days) <= 400:
@@ -171,7 +194,7 @@ def refresh(root, login, token, force=False):
     if not isinstance(previous, dict) or not isinstance(previous.get('updated'), str):
         previous = {}
     changed = force or any(previous.get(key) != value for key, value in snapshot.items())
-    snake_changed = force or previous.get('calendar') != snapshot['calendar'] or any(
+    snake_changed = force or previous.get('snake_calendar_hash') != calendar_hash(snapshot['calendar']) or any(
         not (assets / filename).is_file() for filename in SNAKES
     )
     updated = previous.get('updated', '')
@@ -179,7 +202,10 @@ def refresh(root, login, token, force=False):
         updated = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')
         for dark, filename in [(False, 'github-stats.svg'), (True, 'github-stats-dark.svg')]:
             (assets / filename).write_text(make_svg(login, snapshot['stats'], updated, dark), encoding='utf-8')
-        state_file.write_text(json.dumps({**snapshot, 'updated': updated}, indent=2) + '\n', encoding='utf-8')
+        state_file.write_text(json.dumps({
+            **snapshot, 'updated': updated,
+            'snake_calendar_hash': '' if force else previous.get('snake_calendar_hash', ''),
+        }, indent=2) + '\n', encoding='utf-8')
     print(f"Checked public statistics for {login}: " + ", ".join(f"{label}={value}" for label, value, _ in snapshot['stats']))
     return snake_changed
 
@@ -190,14 +216,14 @@ STATUS_START = '<!-- profile-sync:status:start -->'
 STATUS_END = '<!-- profile-sync:status:end -->'
 
 
-def publish_assets(root):
-    """Change all image cache keys together, only after every generator succeeds."""
+def publish_assets(root, include_snakes=True):
+    """Publish cards immediately; acknowledge snake data only after successful rendering."""
     assets = root / 'assets'
     state = json.loads((assets / 'profile-data.json').read_text(encoding='utf-8'))
     readme_file = root / 'README.md'
     readme = readme_file.read_text(encoding='utf-8')
     base = f"https://raw.githubusercontent.com/{state['login']}/{state['login']}/main/assets/"
-    for filename in CARDS + SNAKES:
+    for filename in CARDS + (SNAKES if include_snakes else []):
         version = sha256((assets / filename).read_bytes()).hexdigest()[:20]
         pattern = re.escape(base + filename) + r'(?:\?[^"\s<>]*)?'
         readme, replacements = re.subn(pattern, lambda _: base + filename + '?v=' + version, readme)
@@ -217,15 +243,18 @@ def publish_assets(root):
     else:
         readme = readme.replace('## 📊 GitHub Stats', '## 📊 GitHub Stats\n\n' + status, 1)
     readme_file.write_text(readme, encoding='utf-8')
+    if include_snakes:
+        state['snake_calendar_hash'] = calendar_hash(state['calendar'])
+        (assets / 'profile-data.json').write_text(json.dumps(state, indent=2) + '\n', encoding='utf-8')
 
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    if sys.argv[1:] == ['--publish']:
-        publish_assets(root)
+    if sys.argv[1:] in (['--publish'], ['--publish-cards']):
+        publish_assets(root, include_snakes=sys.argv[1:] == ['--publish'])
         return
     if sys.argv[1:]:
-        raise ValueError('Supported option: --publish')
+        raise ValueError('Supported options: --publish, --publish-cards')
     login = os.environ.get('PROFILE_USER') or os.environ['GITHUB_REPOSITORY_OWNER']
     snake_changed = refresh(root, login, os.environ['GITHUB_TOKEN'], os.environ.get('FORCE_PROFILE_REFRESH') == 'true')
     if os.environ.get('GITHUB_OUTPUT'):
