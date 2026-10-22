@@ -12,14 +12,14 @@
 ## 📊 GitHub Stats
 
 <!-- profile-sync:status:start -->
-<sub>Public-data snapshot · Updated 2026-10-21 17:18 UTC · [Scheduled checks every 5 minutes](https://github.com/Cyril-Fan/Cyril-Fan/actions/workflows/profile.yml). GitHub scheduling and caching can delay updates; this is not a live counter.</sub>
+<sub>Public-data snapshot · Updated 2026-10-22 01:51 UTC · [Scheduled checks every 5 minutes](https://github.com/Cyril-Fan/Cyril-Fan/actions/workflows/profile.yml). GitHub scheduling and caching can delay updates; this is not a live counter.</sub>
 <!-- profile-sync:status:end -->
 
 <a href="https://github.com/Cyril-Fan#gh-light-mode-only">
-  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-stats.svg?v=c6ae9147faa1f77db236" alt="Cyril Fan's public GitHub statistics in light mode" width="100%" />
+  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-stats.svg?v=e91a090b22475be9f5a9" alt="Cyril Fan's public GitHub statistics in light mode" width="100%" />
 </a>
 <a href="https://github.com/Cyril-Fan#gh-dark-mode-only">
-  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-stats-dark.svg?v=2e229079dea988a96d21" alt="Cyril Fan's public GitHub statistics in dark mode" width="100%" />
+  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-stats-dark.svg?v=8edbdcc8b3528cf0f54b" alt="Cyril Fan's public GitHub statistics in dark mode" width="100%" />
 </a>
 
 <a href="https://github.com/Cyril-Fan#gh-light-mode-only">
