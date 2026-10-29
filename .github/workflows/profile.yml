@@ -6,6 +6,11 @@ on:
     # Scheduled jobs can still be delayed or dropped by GitHub.
     - cron: '2-57/5 * * * *'
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/update_stats.py'
+      - 'tests/test_update_stats.py'
+      - '.github/workflows/profile.yml'
   watch:
     types: [started]
   push:
@@ -19,7 +24,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the proposed changes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run profile tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Verify authenticated public data
+        run: python3 scripts/update_stats.py
+        env:
+          PROFILE_USER: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   generate:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
