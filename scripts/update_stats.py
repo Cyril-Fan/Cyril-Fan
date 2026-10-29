@@ -55,23 +55,29 @@ def calendar_hash(calendar):
     return sha256(json.dumps(calendar, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def fetch_public_repository_totals(login):
-    """Count the public owner's list, independently of the workflow token's scope."""
+def fetch_public_repository_totals(login, token):
+    """Count public repositories, rejecting an incomplete installation-scoped list."""
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': f'Bearer {token}',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'github-profile-stats',
+        'Cache-Control': 'no-cache',
+    }
+    request = Request(f'https://api.github.com/users/{login}', headers=headers)
+    with urlopen(request, timeout=30) as response:
+        profile = json.load(response)
+    if not isinstance(profile, dict) or not isinstance(profile.get('login'), str) or profile['login'].lower() != login.lower():
+        raise ValueError('GitHub returned an invalid public profile')
+    expected_repositories = count(profile.get('public_repos'))
     seen = set()
     stars = 0
     page = 1
     while True:
         request = Request(
             f'https://api.github.com/users/{login}/repos?type=owner&sort=full_name&per_page=100&page={page}',
-            headers={
-                'Accept': 'application/vnd.github+json',
-                'X-GitHub-Api-Version': '2022-11-28',
-                'User-Agent': 'github-profile-stats',
-                'Cache-Control': 'no-cache',
-            },
+            headers=headers,
         )
-        # Deliberately unauthenticated: this card describes the public profile,
-        # not the repository subset visible through an installation token.
         with urlopen(request, timeout=30) as response:
             repositories = json.load(response)
         if not isinstance(repositories, list) or len(repositories) > 100:
@@ -92,6 +98,8 @@ def fetch_public_repository_totals(login):
             seen.add(repository_id)
             stars += count(repository.get('stargazers_count'))
         if len(repositories) < 100:
+            if len(seen) != expected_repositories:
+                raise ValueError('Public repository list does not match the profile count')
             return len(seen), count(stars)
         page += 1
 
@@ -117,7 +125,7 @@ def fetch_snapshot(login, token):
     user = result["data"]["user"]
     if user is None:
         raise RuntimeError(f"GitHub user {login!r} was not found")
-    total_repositories, stars = fetch_public_repository_totals(login)
+    total_repositories, stars = fetch_public_repository_totals(login, token)
     calendar = user['contributionsCollection']['contributionCalendar']
     days = [
         contribution_day(day)
@@ -264,3 +272,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
