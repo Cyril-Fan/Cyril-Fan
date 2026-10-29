@@ -37,12 +37,16 @@ def public_repositories(stars):
     ]
 
 
+def public_profile(repositories):
+    return {'login': 'Cyril-Fan', 'public_repos': len(repositories) if isinstance(repositories, list) else 0}
+
+
 def replies(value, repositories=None):
     if repositories is None:
         nodes = value.get('data', {}).get('user', {}).get('repositories', {}).get('nodes', [])
         repositories = public_repositories([node['stargazerCount'] for node in nodes])
     return patch.object(stats, 'urlopen', side_effect=[
-        io.BytesIO(json.dumps(payload).encode()) for payload in [value, repositories]
+        io.BytesIO(json.dumps(payload).encode()) for payload in [value, public_profile(repositories), repositories]
     ])
 
 
@@ -199,8 +203,9 @@ class ProfileRefreshTests(unittest.TestCase):
             svg = (self.root / 'assets' / name).read_text(encoding='utf-8')
             self.assertIn('Repositories: 3; Stars: 3;', svg)
         self.assertNotEqual(before, (self.root / 'README.md').read_text(encoding='utf-8'))
-        public_request = network.call_args_list[1].args[0]
-        self.assertIsNone(public_request.get_header('Authorization'))
+        self.assertEqual(network.call_args_list[1].args[0].get_header('Authorization'), 'Bearer test-token')
+        public_request = network.call_args_list[2].args[0]
+        self.assertEqual(public_request.get_header('Authorization'), 'Bearer test-token')
         self.assertIn('type=owner', public_request.full_url)
         self.assertNotIn('repositories(', stats.QUERY)
 
@@ -209,14 +214,26 @@ class ProfileRefreshTests(unittest.TestCase):
         last = public_repositories([9])
         last[0]['id'] = 101
         with patch.object(stats, 'urlopen', side_effect=[
-            io.BytesIO(json.dumps(payload).encode()) for payload in [first, last]
+            io.BytesIO(json.dumps(payload).encode()) for payload in [public_profile(first + last), first, last]
         ]) as network:
-            self.assertEqual(stats.fetch_public_repository_totals('Cyril-Fan'), (101, 109))
-        self.assertIn('page=2', network.call_args_list[1].args[0].full_url)
+            self.assertEqual(stats.fetch_public_repository_totals('Cyril-Fan', 'test-token'), (101, 109))
+        self.assertIn('page=2', network.call_args_list[2].args[0].full_url)
         with patch.object(stats, 'urlopen', side_effect=[
+            io.BytesIO(json.dumps(public_profile(first + first)).encode()),
             io.BytesIO(json.dumps(first).encode()), io.BytesIO(json.dumps(first).encode())
         ]), self.assertRaises(ValueError):
-            stats.fetch_public_repository_totals('Cyril-Fan')
+            stats.fetch_public_repository_totals('Cyril-Fan', 'test-token')
+
+    def test_incomplete_authenticated_list_preserves_snapshot(self):
+        self.refresh(response())
+        before = self.files()
+        with patch.object(stats, 'urlopen', side_effect=[
+            io.BytesIO(json.dumps(response()).encode()),
+            io.BytesIO(json.dumps({'login': 'Cyril-Fan', 'public_repos': 3}).encode()),
+            io.BytesIO(json.dumps(public_repositories([1, 0])).encode()),
+        ]), self.assertRaisesRegex(ValueError, 'does not match'):
+            stats.refresh(self.root, 'Cyril-Fan', 'test-token')
+        self.assertEqual(self.files(), before)
 
     def test_invalid_or_failed_public_repository_fetch_preserves_snapshot(self):
         self.refresh(response())
@@ -247,3 +264,5 @@ class ProfileRefreshTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
