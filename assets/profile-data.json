@@ -24,41 +24,6 @@
   ],
   "calendar": [
     {
-      "date": "2025-11-02",
-      "count": 0,
-      "level": 0
-    },
-    {
-      "date": "2025-11-03",
-      "count": 0,
-      "level": 0
-    },
-    {
-      "date": "2025-11-04",
-      "count": 0,
-      "level": 0
-    },
-    {
-      "date": "2025-11-05",
-      "count": 0,
-      "level": 0
-    },
-    {
-      "date": "2025-11-06",
-      "count": 0,
-      "level": 0
-    },
-    {
-      "date": "2025-11-07",
-      "count": 0,
-      "level": 0
-    },
-    {
-      "date": "2025-11-08",
-      "count": 0,
-      "level": 0
-    },
-    {
       "date": "2025-11-09",
       "count": 0,
       "level": 0
@@ -1877,8 +1842,13 @@
       "date": "2026-11-07",
       "count": 0,
       "level": 0
+    },
+    {
+      "date": "2026-11-08",
+      "count": 0,
+      "level": 0
     }
   ],
-  "updated": "2026-11-07 02:50",
+  "updated": "2026-11-08 02:16",
   "snake_calendar_hash": "2a549aabca20d165a7595bd6e2c199dd5b3bd90d27397c718db6d128698c030b"
 }
