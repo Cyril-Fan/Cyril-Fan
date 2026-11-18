@@ -23,10 +23,10 @@
 </a>
 
 <a href="https://github.com/Cyril-Fan#gh-light-mode-only">
-  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-contribution-grid-snake.svg?v=7ff2e6b5ce4aaec1f6e9" alt="Contribution snake using GitHub's Light default contribution colors" width="100%" />
+  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-contribution-grid-snake.svg?v=f3b896593f7b3813eb70" alt="Contribution snake using GitHub's Light default contribution colors" width="100%" />
 </a>
 <a href="https://github.com/Cyril-Fan#gh-dark-mode-only">
-  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-contribution-grid-snake-dark.svg?v=c9f736d24b279ed6b5e3" alt="Contribution snake using GitHub's Dark default contribution colors" width="100%" />
+  <img src="https://raw.githubusercontent.com/Cyril-Fan/Cyril-Fan/main/assets/github-contribution-grid-snake-dark.svg?v=ec94be71cbf460cfe8d5" alt="Contribution snake using GitHub's Dark default contribution colors" width="100%" />
 </a>
 
 ---
